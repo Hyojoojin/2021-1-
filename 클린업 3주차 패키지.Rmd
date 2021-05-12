@@ -1,0 +1,276 @@
+---
+title: "클린업 3주차 패키지"
+output: html_document
+---
+# 1. 모델링을 위한 전처리
+### 문제 0. 기본 세팅
+```{r}
+library(tidyverse)
+library(data.table)
+library(gridExtra)
+setwd("C:/Users/wlsgy/OneDrive/바탕 화면/3주차패키지")
+data <- fread("data.csv",
+              header = T,
+              stringsAsFactors = F,
+              data.table = F)
+test <- fread("test.csv",
+              header = T,
+              stringsAsFactors = F,
+              data.table = F)
+```
+
+### Train data 전처리 및 EDA
+#### 문제 1. 
+```{r, warning = FALSE}
+head(data)
+data %>% str()
+data$bmi<-as.numeric(data$bmi)
+colSums(is.na(data))
+NAmean <- function(x) replace(x, is.na(x), mean(x, na.rm = TRUE))
+data<-replace(data, TRUE, lapply(data, NAmean))
+colSums(is.na(data))
+```
+#### 문제 2.
+```{r}
+data %>% str()
+data[c(2,6:8,11)] <- lapply(data[c(2,6:8,11)], as.factor)
+data[c(4:5)] <- lapply(data[c(4:5)], as.factor)
+data %>% str()
+
+```
+
+#### 문제 3.
+```{r}
+data<-data %>% select(-"id")
+data %>% colnames()
+
+```
+
+#### 문제 4.
+```{r, warning=FALSE}
+df_fac<-data %>%
+  gather(key='variable', value='value',
+         c('gender', 'hypertension', 'heart_disease', 
+           'ever_married','work_type', 'Residence_type', 'smoking_status'))
+
+## df에서 stroke 1인 행만 고르기
+str1<-subset(df_fac, data$stroke==1)
+
+stroke_plot_1 = ggplot(str1, aes(x=variable, fill=value))+
+  geom_bar(position = 'fill', alpha=0.5)+
+  coord_flip()+
+  theme(panel.background = element_rect(fill = 'white', color = 'black', linetype = 'solid'),
+        axis.title.x = element_text(face = 'bold', size = 8),
+        axis.title.y = element_text(face = 'bold', size = 8),
+        plot.title = element_text(face = 'bold', size = 10, hjust = 0.5),
+        axis.text.x = element_text(face = 'bold', size = 8, colour = 'grey50'),
+        axis.text.y = element_text(face = 'bold', size = 8, colour = 'grey50'),
+        legend.position = 'bottom',
+        legend.title = element_blank(),
+        legend.key.size = unit(4,'mm'))+
+  labs(x='variable', title = 'Stroke : 1')+
+  guides(color=FALSE)
+
+## df에서 stroke 0인 행만 고르기
+str2<-subset(df_fac, data$stroke==0)
+
+stroke_plot_2 = ggplot(str2, aes(x=variable, fill=value))+
+  geom_bar(position = 'fill', alpha=0.5)+
+  coord_flip()+
+  theme(panel.background = element_rect(fill = 'white', color = 'black', linetype = 'solid'),
+        axis.title.x = element_text(face = 'bold', size = 8),
+        axis.title.y = element_text(face = 'bold', size = 8),
+        plot.title = element_text(face = 'bold', size = 10, hjust = 0.5),
+        axis.text.x = element_text(face = 'bold', size = 8, colour = 'grey50'),
+        axis.text.y = element_text(face = 'bold', size = 8, colour = 'grey50'),
+        legend.position = 'bottom',
+        legend.title = element_blank(),
+        legend.key.size = unit(4,'mm'))+
+  labs(x='variable', title = 'Stroke : 0')+
+  guides(color=FALSE)
+
+grid.arrange(stroke_plot_1, stroke_plot_2, ncol=2)
+```
+
+#### 문제 5.
+```{r}
+stroke_plot_3 = data %>% select(c(where((is.numeric))),stroke) %>% gather(key='variable', value='value', -stroke) %>% subset(stroke==1) %>% ggplot(aes(x=value,color=variable)) + geom_density() + labs(title="stroke : 1") +theme(panel.background = element_rect(fill = "white",color = "black"), plot.title = element_text( hjust = 0.5, size =
+                                    15, color = "black"))
+
+stroke_plot_4 = data %>% select(c(where((is.numeric))),stroke) %>% gather(key='variable', value='value', -stroke) %>% subset(stroke==0) %>% ggplot(aes(x=value,color=variable)) + geom_density() + labs(title="stroke : 1") +theme(panel.background = element_rect(fill = "white",color = "black"), plot.title = element_text( hjust = 0.5, size =
+                                    15, color = "black"))
+grid.arrange(stroke_plot_3, stroke_plot_4)
+```
+
+#### 문제 6.
+```{r, warning=FALSE}
+data %>% str()
+cate_var<-data %>% select_if(is.factor) %>% colnames() 
+chitest<-data.frame(cate_var = cate_var, chi = c(NA))
+cate.data<-data %>%
+  select(c("stroke","gender","hypertension","heart_disease",
+           "ever_married","work_type","Residence_type","smoking_status"))
+for(i in 2:8){
+  cate.tab<-xtabs(~cate.data[,i]+stroke, cate.data)
+  chisq<- chisq.test(cate.tab)
+  pval<-chisq$p.value
+  if (pval < 0.05){
+    chitest[(i-1),2]="denied"
+  }
+  else{
+    chitest[(i-1),2]="accept"
+  }
+}
+
+chitest %>% print()
+```
+
+#### 문제 7.
+```{r}
+data<-data %>% select(-c("gender", "Residence_type"))
+data %>% colnames()
+```
+
+
+### Test data 전처리
+#### 문제 8.
+```{r, warning = FALSE}
+head(test)
+test %>% str()
+test$bmi<-as.numeric(test$bmi)
+colSums(is.na(test))
+NAmean <- function(x) replace(x, is.na(x), mean(x, na.rm = TRUE))
+test<-replace(test, TRUE, lapply(test, NAmean))
+colSums(is.na(test))
+
+##
+test %>% str()
+test[c(2,6:8,11)] <- lapply(test[c(2,6:8,11)], as.factor)
+test[c(4:5)] <- lapply(test[c(4:5)], as.factor)
+test %>% str()
+
+##
+test<-test %>% select(-"id")
+test %>% colnames()
+```
+
+# 2. Catboost
+## 문제 0.
+```{r}
+library(catboost)
+library(caret)
+library(MLmetrics)
+
+# 범주형 변수가 많을 때 많이 사용되고 iterations, depth와 같은 파라미터가 있다
+```
+
+## 문제 1.
+```{r}
+logloss_cb <- expand.grid(depth = c(4, 6, 8), 
+                          iterations=c(100,200), logloss = c(NA))
+logloss_cb
+```
+
+## 문제 2.
+```{r}
+data.pool <- catboost.load_pool(data = select(data, - stroke),
+                                 label = data$stroke)
+test.pool <- catboost.load_pool(data = select(test, -stroke),
+                                label = test$stroke)
+cv <- caret::createFolds(data$stroke, k = 5)
+
+set.seed(1234)
+
+for(j in 1 : nrow(logloss_cb)){
+    logloss_result = c()
+  for(i in 1:5){
+    idx = cv[[i]]
+    train_set = data[-idx,]
+    test_set = data[idx,]
+    
+    cv_train_pool=catboost.load_pool(data=select(train_set,-stroke),
+                                     label = train_set$stroke)
+    
+    cv_test_pool = catboost.load_pool(data = select(test_set, -stroke),
+                                      label = test_set$stroke)
+    
+    
+    cb_model = catboost.train(learn_pool = cv_train_pool,
+                                  params = as.list(logloss_cb[j,-3],
+                                                   random_seed = 1234))
+    
+    predict = catboost.predict(cb_model, cv_test_pool)
+    
+    logloss = LogLoss(predict, test_set$stroke)
+    
+    logloss_result = c(logloss_result, logloss)
+  }
+  cv_mean_logloss = mean(logloss_result)
+  logloss_cb[j,3]=cv_mean_logloss
+}
+logloss_cb %>% print()
+```
+
+## 문제 3.
+```{r}
+logloss_cb[which.min(logloss_cb$logloss),]
+
+#depth 4, iterations 200, logloss 0.2489917
+```
+
+## 문제 4.
+```{r}
+data.pool <- catboost.load_pool(data = select(data, - stroke),
+                                 label = data$stroke)
+
+test.pool <- catboost.load_pool(data = select(test, -stroke),
+                                label = test$stroke)
+
+cb_model = catboost.train(learn_pool = data.pool,
+                                  params = as.list(logloss_cb[which.min(logloss_cb$logloss),-3]
+,
+                                                   random_seed = 1234))
+pred.cb = catboost.predict(cb_model, test.pool)
+    
+LogLoss(pred.cb, test$stroke)
+
+```
+
+# 3. K-means Clustering
+## 문제 1.
+```{r}
+library(factoextra)
+library(cluster)
+new.data<-data
+new.data[c(1,6:7)]<-new.data[c(1,6:7)] %>% transform () %>% scale()
+n.data<-new.data %>% select(c("age", "avg_glucose_level", "bmi"))
+
+```
+
+## 문제 2.
+```{r}
+fviz_nbclust(n.data, kmeans, method = "wss", k.max = 10)
+fviz_nbclust(n.data, kmeans, method = "silhouette", k.max =10)
+
+```
+
+## 문제 3.
+```{r}
+set.seed(1234)
+data.cluster<-kmeans(n.data, 3, nstart = 1, iter.max = 30)
+fviz_cluster(data.cluster, data = n.data, stand=F)+theme(panel.background = element_rect(fill = "white",color = "black"))
+
+```
+
+## 문제 4.
+```{r}
+cluster.data = data %>% select(where(is.numeric)) %>% mutate(cluster= data.cluster$cluster) 
+
+age.cluster = cluster.data %>% ggplot(aes(x=factor(cluster),y=age)) + geom_boxplot(outlier.shape = NA, alpha=0.5,fill=c("#ff5e78", "#ffc75f", "#845ec2"),color=c("#ff5e78", "#ffc75f", "#845ec2")) + stat_boxplot(geom='errorbar',color=c("#ff5e78", "#ffc75f", "#845ec2")) + labs(x='cluster') + theme(panel.background = element_rect(fill = "white",color = "black"))
+
+glucose.cluster = cluster.data %>% ggplot(aes(x=factor(cluster),y=avg_glucose_level)) + geom_boxplot(outlier.shape = NA, alpha=0.5,fill=c("#ff5e78", "#ffc75f", "#845ec2"),color=c("#ff5e78", "#ffc75f", "#845ec2")) + stat_boxplot(geom='errorbar',color=c("#ff5e78", "#ffc75f", "#845ec2")) + labs(x='cluster') + theme(panel.background = element_rect(fill = "white",color = "black"))
+
+bmi.cluster = cluster.data %>% ggplot(aes(x=factor(cluster),y=bmi)) + geom_boxplot(outlier.shape = NA, alpha=0.5,fill=c("#ff5e78", "#ffc75f", "#845ec2"),color=c("#ff5e78", "#ffc75f", "#845ec2")) + stat_boxplot(geom='errorbar',color=c("#ff5e78", "#ffc75f", "#845ec2")) + labs(x='cluster') + theme(panel.background = element_rect(fill = "white",color = "black"))
+
+grid.arrange(age.cluster, glucose.cluster, bmi.cluster, ncol = 3)
+```

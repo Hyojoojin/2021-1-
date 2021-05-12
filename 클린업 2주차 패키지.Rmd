@@ -1,0 +1,224 @@
+---
+title: "2주차 패키지"
+author: "진효주"
+output: html_document
+---
+# 1. 모델링을 위한 전처리
+### 문제 0. 기본 세팅
+```{r}
+library(tidyverse)
+library(data.table)
+library(VIM)
+setwd("C:/Users/wlsgy/OneDrive/바탕 화면/P-SAT/패키지/2주차패키지 2")
+data <- fread("data.csv",
+              header = T,
+              stringsAsFactors = F,
+              data.table = F)
+```
+### 문제 1. '2'로 끝나는 변수 제거
+```{r}
+data<-data %>% select(-ends_with("2"))
+data %>% colnames()
+```
+### 문제 2. 'VIM' 패키지를 통한 시각화 및 해석
+```{r}
+data %>% summary()
+aggr(data,prop=FALSE,numbers=TRUE, col = c("lightyellow", "pink"))
+```
+
+### 문제 3-1. NA imputation (mean imputation)
+```{r, warning=FALSE}
+NAmean <- function(x) replace(x, is.na(x), mean(x, na.rm = TRUE))
+data<-replace(data, TRUE, lapply(data, NAmean))
+```
+
+### 문제 3-2. NA imputation (mode imputation)
+```{r}
+NAmode <- function(x) {
+  unique_x <- unique(x)
+  mode <- unique_x[which.max(tabulate(match(x, unique_x)))]
+  mode
+}
+data[is.na(data)] <- NAmode(data[!is.na(data)])  
+sum(is.na(data))
+```
+### 문제 4. 
+```{r}
+data$OC <- data$OC %>%  recode ('open'='1') %>% recode(., 'close' = '0')
+```
+
+### 문제 5. 
+```{r}
+data %>% str()
+data[c(7:13,20)] <- lapply(data[c(7:13,20)], as.numeric)
+data %>% str()
+```
+
+# 2. 분류 모델
+## 모델 1. 로지스틱 회귀
+### 문제 1. train val 나누기
+```{r}
+library(caret)
+library(MLmetrics)
+library(randomForest)
+set.seed(1234)
+hold_out_index <- createDataPartition(data$OC, p = 0.3, list = F)
+train_h <- data[-hold_out_index,]
+val_h <- data[hold_out_index,]
+train_h %>% dim()
+val_h %>% dim()
+```
+### 문제 2. hold out
+```{r , warning = FALSE}
+data$OC <- data$OC %>% as.numeric()
+train_h$OC <- train_h$OC %>% as.numeric()
+val_h$OC <- val_h$OC %>% as.numeric()
+model = glm(OC ~ ., data = train_h, family = "binomial")
+model %>% summary()
+glm.data<-predict(model, newdata = val_h, type = 'response')
+glm.pred<-ifelse(glm.data < 0.5, 0, 1)
+#Accuracy
+sum(glm.pred) / length(glm.pred)
+```
+### 문제 3. Feature Selection & Hold out
+```{r , warning=FALSE}
+set.seed(1234)
+model2<- step(model, direction = 'both')
+n.model = glm(OC ~ revenue1+salescost1+sga1+noi1+noe1+interest1+
+                profit1+liquidAsset1+quickAsset1+receivableS1+
+                inventoryAsset1+nonCAsset1+tanAsset1+surplus1+
+                ownerChange, data = train_h, family = "binomial")
+n.model %>% summary()
+n.glm.data<-predict(n.model, newdata = val_h, type = 'response')
+n.glm.pred<-ifelse(n.glm.data < 0.5, 0, 1)
+#Accuracy
+sum(n.glm.pred) / length(n.glm.pred)
+
+```
+## 모델 2. 랜덤포레스트
+### 문제 4. mtry gridsearch 데이터프레임 만들기
+```{r}
+acc_rf<-data.frame(mtry = c(3,4,5), acc = rep(NA,3))
+acc_rf
+```
+### 문제 5. 5-fold CV 그리드서치 ntree = 10
+```{r, warning=FALSE}
+set.seed(1234)
+cv_index <- createFolds(data$OC, k = 5, list = T)
+mtry_grid <- 3:5
+x = 1
+for(i in 1:length(mtry_grid)){
+    for(k in 1:5){
+      cv_train = data[-cv_index[[k]],]
+      cv_test = data[cv_index[[k]],]
+      set.seed(1234)
+      cv_acc<-c()
+      rf = randomForest(OC~ revenue1+salescost1+sga1+noi1+noe1+interest1+
+                profit1+liquidAsset1+quickAsset1+receivableS1+
+                inventoryAsset1+nonCAsset1+tanAsset1+surplus1+
+                ownerChange, data = cv_train, mtry = mtry_grid[i], 
+                        ntree = 10, importance = F)
+      data.pred = predict(rf, newdata = cv_test, type = 'response')
+      rf.pred<-ifelse(data.pred < 0.5, 0, 1)
+      rf.acc<- sum(rf.pred) / length(rf.pred)
+      cv_acc = rf.acc
+      }
+    acc_rf[x, "acc"] = max(cv_acc)
+    x = x + 1
+}
+acc_rf
+```
+
+### 문제 6. 가장 높은 Accuracy 행 출력
+```{r}
+acc_rf[which.max(acc_rf$acc),] %>% print
+```
+### 문제 7. 시각화
+```{r , warning = FALSE}
+#mtry = 4
+set.seed(1234)
+rf = randomForest(as.factor(OC)~ revenue1+salescost1+sga1+noi1+noe1+interest1+
+                profit1+liquidAsset1+quickAsset1+receivableS1+
+                inventoryAsset1+nonCAsset1+tanAsset1+surplus1+
+                ownerChange, data = cv_train, mtry = 4, 
+                        ntree = 10, importance = TRUE)
+imp<-importance(rf)
+imp.rf=imp[,c(3,4)]
+imp.rf=imp.rf %>% as.matrix()
+imp.rf=data.frame(Variable = rownames(imp.rf), imp.rf)
+rownames(imp.rf)<-c(1:15)
+imp.sort.Gini <- transform(imp.rf, 
+                      Variable = reorder(Variable,MeanDecreaseGini))
+ggplot(data=imp.sort.Gini, aes(x=Variable, y=MeanDecreaseGini)) + 
+  ylab("Mean Decrease Gini")+xlab("Variable Name")+
+  theme(panel.background = 
+          element_rect(fill = "white",color = "black"),
+        text = element_text(face = "bold", size = 10))+
+  geom_bar(stat="identity",fill="pink",width=.05)+ 
+  geom_point(color = 'pink', size = 1.5)+
+  coord_flip() 
+```
+
+# 3. 회귀모델
+### 문제 1. train test 나누기
+```{r}
+library(MASS)
+boston_index <- createDataPartition(Boston$medv, p = 0.2, list = F)
+train.b <- Boston[-boston_index,]
+test.b <- Boston[boston_index,]
+train.b %>% dim()
+test.b %>% dim()
+```
+
+### 문제 2. expand.grid 이용
+```{r}
+RMSE_rf <- expand.grid(mtry = c(3, 4, 5), ntree=c(10, 100, 200), RMSE = c(NA))
+RMSE_rf
+```
+
+### 문제 3. 5-fold CV 랜덤포레스트
+```{r, warning=FALSE}
+select<-dplyr::select
+set.seed(1234)
+cv_index <- createFolds(Boston$medv, k = 5, list = T)
+mtry_grid <- 3:5
+ntree_grid <- c(10,100,200)
+x = 1
+for(i in 1:length(mtry_grid)){
+  for(j in 1:length(ntree_grid)){
+    cv_rmse = c()
+    for(k in 1:5){
+      cv_train = train.b[-cv_index[[k]],]
+      cv_test = train.b[cv_index[[k]],]
+      cv_test = na.omit(cv_test)
+      set.seed(1234)
+      rf = randomForest(medv~., 
+                        data = cv_train, 
+                        mtry = mtry_grid[i], 
+                        ntree = ntree_grid[j], 
+                        importance = F)
+      temp_pred = predict(rf, select(cv_test, -medv))
+      temp_RMSE = RMSE(temp_pred, cv_test$medv)
+      cv_rmse[k] = temp_RMSE
+      }
+    RMSE_rf[x, "RMSE"] = mean(cv_rmse)
+    x = x + 1
+  }
+}
+```
+
+### 문제 4. 가장 낮은 RMSE 값 출력
+```{r}
+RMSE_rf[which.min(RMSE_rf$RMSE),]
+```
+
+### 문제 5. train set 학습하고 test set RMSE 구하기
+```{r}
+#mtry = 5, ntree = 100
+b.model = randomForest(medv~.,
+                       data = train.b, mtry = 5,ntree = 100,
+                       importance = F)
+boston_pred = predict(b.model, select(test.b, -medv))
+RMSE(boston_pred, test.b$medv)
+
+```
